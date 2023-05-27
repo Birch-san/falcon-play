@@ -38,6 +38,8 @@ class Message(NamedTuple):
   participant: Participant
   message: str
 
+class SufficientResponse(BaseException): ...
+
 @dataclass
 class StopOnTokens(StoppingCriteria):
   stop_token_ids: List[int]
@@ -87,9 +89,9 @@ class MiscArguments:
     default=False,
     metadata={"help": "Invoke torch.compile() on the model, with mode='max-autotune'. Requires PyTorch 2, CUDA, and either Python 3.10 or Python 3.11 with a recent torch nightly. Will make the first inference from the model take a bit longer, but subsequent inferences will be faster."}
   )
-  compile: bool = field(
-    default=False,
-    metadata={"help": "Invoke torch.compile() on the model, with mode='max-autotune'. Requires PyTorch 2, CUDA, and either Python 3.10 or Python 3.11 with a recent torch nightly. Will make the first inference from the model take a bit longer, but subsequent inferences will be faster."}
+  overrun_countermeasures: bool = field(
+    default=True,
+    metadata={"help": "Detect when bot is about to start talking to itself; end the generation before that happens. The bot is *supposed* to emit an end-of-sentence token to indicate that it's finished its reply, but very often it neglects to do this, and continues to sequence-complete the conversation. Hence this countermeasure tries to detect and prevent that."}
   )
   your_name: str = field(
     default='Marisa',
@@ -227,7 +229,7 @@ def main():
   
     chat_to_complete: str = '\n'.join([
       *[
-        f"{'' if participant is Participant.System else f'{participant_names[participant]}: '}{message}"
+        f"{'' if participant is Participant.System else f'{participant_names[participant]}:'}{message}"
         for participant, message in history
       ],
       f'{participant_names[Participant.Assistant]}:'
@@ -238,10 +240,38 @@ def main():
     print(green_ansi, end='', flush=True)
 
     response = ''
-    def on_text(message: str, stream_end = False):
-      nonlocal response
-      response += message
-      print(message, end='', flush=True)
+    if misc_args.overrun_countermeasures:
+      # the model may continue adding to the conversation (replying to itself) instead of emitting an EOS token.
+      # we try to intercept this. If it looks like it's starting a new message in the voice of either of the chat participants: don't print that, and stop generation.
+      acc_overrun = ''
+
+      def on_text(message: str, stream_end = False):
+        nonlocal response, acc_overrun
+
+        overrun_and_message = f'{acc_overrun}{message}'
+
+        newline_ix = overrun_and_message.find('\n')
+        if newline_ix > -1:
+          pre_newline, post_newline = overrun_and_message.split('\n', maxsplit=1)
+
+          potential_participant_name = post_newline[:overrun_and_message.find(':')]
+          if potential_participant_name == f'{misc_args.your_name}:' or potential_participant_name == f'{misc_args.bot_name}:':
+            raise SufficientResponse()
+          if potential_participant_name.rstrip(f'{misc_args.your_name}:') == '' or potential_participant_name.rstrip(f'{misc_args.bot_name}:') == '':
+            # could potentially grow to match one of the names. we need to accumulate to see whether that's where the bot was going.
+            acc_overrun = f'\n{post_newline}'
+            response += pre_newline
+            print(pre_newline, end='', flush=True)
+            return
+          # the potential_participant_name cannot grow into a reply from either chat participant, so this must be something else. flush everything we accumulated.
+        response += overrun_and_message
+        print(overrun_and_message, end='', flush=True)
+        acc_overrun = ''
+    else:
+      def on_text(message: str, stream_end = False):
+        nonlocal response
+        response += message
+        print(message, end='', flush=True)
 
     streamer = CallbackTextIteratorStreamer(tokenizer, callback=on_text, skip_prompt=True, skip_special_tokens=True)
 
@@ -257,7 +287,7 @@ def main():
       # if you wanted to see the result, you can do so like this:
       #   decode: List[str] = tokenizer.decode(prediction[0,tokenized_prompts.input_ids.size(-1):], skip_special_tokens=True, clean_up_tokenization_spaces=True)
       # but we're already streaming it to the console via our callback
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SufficientResponse):
       pass
 
     # reset ANSI control sequence (plus line break)
