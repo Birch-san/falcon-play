@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, TypedDict, NamedTuple, List, Dict
+from typing import Optional, TypedDict, NamedTuple, List, Dict, Callable
 import torch
 from torch import LongTensor
 from transformers import (
@@ -93,17 +93,20 @@ class MiscArguments:
     default=True,
     metadata={"help": "Detect when bot is about to start talking to itself; end the generation before that happens. The bot is *supposed* to emit an end-of-sentence token to indicate that it's finished its reply, but very often it neglects to do this, and continues to sequence-complete the conversation. Hence this countermeasure tries to detect and prevent that."}
   )
+  trim_leading_whitespace: bool = field(
+    default=True,
+    metadata={"help": "Don't allow bot to start a reply with a space or a line break."}
+  )
   your_name: str = field(
-    default='Marisa',
+    default='Daniel',
     metadata={"help": "Your name in the chat log."}
   )
   bot_name: str = field(
-    default='Reimu',
+    default='Girafatron',
     metadata={"help": "Chatbot's name in the chat log."}
   )
   system_prompt: str = field(
-    # Touhou Wiki content, originally under CC-BY-SA 4.0, plus adaptations released under CC-BY-SA 4.0 https://en.touhouwiki.net/wiki/Reimu_Hakurei https://en.touhouwiki.net/wiki/Touhou_Wiki:Copyrights
-    default="Reimu is the shrine maiden of the Hakurei Shrine, responsible for maintaining the Great Hakurei Barrier. Her personality is typified by her desires, such as the desire to be wanted, to have good food, and to find happiness. Her biggest internal conflict comes from balancing her duties as the Hakurei shrine maiden and her own desires, though she does not seem to prefer acknowledging many of her internal conflicts. Her duty as the shrine maiden gives Reimu a sense of purpose and identity, however, it conflicts with her desires in that it distances her from others and has her dealing with incidents and other related problems on a frequent basis. Despite her duty making it seem as though she antagonizes youkai, in truth, she wishes for peace between humans and youkai. Reimu is generally a joyful and airheaded person. She's also incredibly prideful and quite arrogant due to it. She's often seen in a good mood until her routines are broken by some outside influence, be it a youkai or the like. She is quick to anger, but she's also quick to forget. Her full name is Hakurei Reimu.",
+    default="Girafatron is obsessed with giraffes, the most glorious animal on the face of this Earth. Giraftron believes all other animals are irrelevant when compared to the glorious majesty of the giraffe.",
     metadata={"help": "Influence how the chatbot responds, by seeding the conversation with some context."}
   )
 
@@ -229,7 +232,7 @@ def main():
   
     chat_to_complete: str = '\n'.join([
       *[
-        f"{'' if participant is Participant.System else f'{participant_names[participant]}:'}{message}"
+        f"{'' if participant is Participant.System else f'{participant_names[participant]}: '}{message}"
         for participant, message in history
       ],
       f'{participant_names[Participant.Assistant]}:'
@@ -240,6 +243,11 @@ def main():
     print(green_ansi, end='', flush=True)
 
     response = ''
+    if misc_args.trim_leading_whitespace:
+      strip_whitespace: Callable[[str], str] = lambda x: x.lstrip() if response == '' else x
+    else:
+      strip_whitespace: Callable[[str], str] = lambda x: x
+
     if misc_args.overrun_countermeasures:
       # the model may continue adding to the conversation (replying to itself) instead of emitting an EOS token.
       # we try to intercept this. If it looks like it's starting a new message in the voice of either of the chat participants: don't print that, and stop generation.
@@ -260,18 +268,23 @@ def main():
           if potential_participant_name.rstrip(f'{misc_args.your_name}:') == '' or potential_participant_name.rstrip(f'{misc_args.bot_name}:') == '':
             # could potentially grow to match one of the names. we need to accumulate to see whether that's where the bot was going.
             acc_overrun = f'\n{post_newline}'
-            response += pre_newline
-            print(pre_newline, end='', flush=True)
+
+            addendum: str = strip_whitespace(pre_newline)
+            response += addendum
+            print(addendum, end='', flush=True)
             return
           # the potential_participant_name cannot grow into a reply from either chat participant, so this must be something else. flush everything we accumulated.
-        response += overrun_and_message
-        print(overrun_and_message, end='', flush=True)
+
+        addendum: str = strip_whitespace(overrun_and_message)
+        response += addendum
+        print(addendum, end='', flush=True)
         acc_overrun = ''
     else:
       def on_text(message: str, stream_end = False):
         nonlocal response
-        response += message
-        print(message, end='', flush=True)
+        addendum: str = strip_whitespace(message)
+        response += addendum
+        print(addendum, end='', flush=True)
 
     streamer = CallbackTextIteratorStreamer(tokenizer, callback=on_text, skip_prompt=True, skip_special_tokens=True)
 

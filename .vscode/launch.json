@@ -14,9 +14,9 @@
         "--model_name_or_path", "tiiuae/falcon-7b-instruct",
         "--bf16",
         "--trust_remote_code",
-        // "--system_prompt", "Girafatron is obsessed with giraffes, the most glorious animal on the face of this Earth. Giraftron believes all other animals are irrelevant when compared to the glorious majesty of the giraffe.",
-        // "--your_name", "Daniel",
-        // "--bot_name", "Girafatron",
+        "--system_prompt", "Reimu is the shrine maiden of the Hakurei Shrine, responsible for maintaining the Great Hakurei Barrier. Marisa is her friend.",
+        "--your_name", "Marisa",
+        "--bot_name", "Reimu",
       ],
       "env": {
       }
