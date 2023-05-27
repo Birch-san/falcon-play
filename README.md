@@ -106,6 +106,26 @@ On Mac you'll need to disable bfloat16. `PYTORCH_ENABLE_MPS_FALLBACK=1` is not n
 PYTORCH_ENABLE_MPS_FALLBACK=1 python -m scripts.chat_play --trust_remote_code
 ```
 
+## Fun parameters
+
+Falcon seems to respond okay to system prompting, so you can give the bot (and yourself) a name, and set the scene at the start of the conversation.
+
+By default, it is configured with the identity "Girafatron", somebody who really likes giraffes. You are Daniel.  
+This plays out the scenario from the [model card](https://huggingface.co/tiiuae/falcon-7b-instruct).
+
+You can become residents of Gensokyo instead:
+
+```bash
+python -m scripts.chat_play --trust_remote_code --bf16 \
+--system_prompt 'Reimu is the shrine maiden of the Hakurei Shrine, responsible for maintaining the Great Hakurei Barrier. Marisa is her friend.' \
+--your_name Marisa \
+--bot_name Reimu
+```
+
+## Mac support
+
+I mean it runs, but it's slow. Try [MPT-7B-Chat](https://github.com/Birch-san/mpt-play) instead, which for some reason performs far better on PyTorch MPS (egregious memory leak notwithstanding).
+
 ## License
 
 This repository is itself MIT-licensed.
