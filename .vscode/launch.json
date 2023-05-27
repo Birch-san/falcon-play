@@ -11,7 +11,6 @@
       "module": "scripts.chat_play",
       "justMyCode": false,
       "args": [
-        "--model_name_or_path", "tiiuae/falcon-7b-instruct",
         "--bf16",
         "--trust_remote_code",
         "--system_prompt", "Reimu is the shrine maiden of the Hakurei Shrine, responsible for maintaining the Great Hakurei Barrier. Marisa is her friend.",
