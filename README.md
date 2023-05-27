@@ -1,6 +1,6 @@
 # Falcon-Play
 
-Python script to demonstrate how to invoke models such as falcon-7b-instruct from the command-line.
+Python script to demonstrate how to invoke models such as [falcon-7b-instruct](https://huggingface.co/tiiuae/falcon-7b-instruct) from the command-line.
 
 ## Setup
 
@@ -111,3 +111,5 @@ PYTORCH_ENABLE_MPS_FALLBACK=1 python -m scripts.chat_play --trust_remote_code
 This repository is itself MIT-licensed.
 
 Includes MIT-licensed code copied from Artidoro Pagnoni's [qlora](https://github.com/artidoro/qlora) and [Apache-licensed](licenses/MosaicML-mpt-7b-chat-hf-space.Apache.LICENSE.txt) code copied from MosaicML's [mpt-7b-chat](https://huggingface.co/spaces/mosaicml/mpt-7b-chat/blob/main/app.py) Huggingface Space.
+
+Please note that the TII Falcon models use a [modified Apache license](https://huggingface.co/tiiuae/falcon-7b-instruct/blob/main/LICENSE.txt), which stipulates that commercial use requires a royalty payment.
