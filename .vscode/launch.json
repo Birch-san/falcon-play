@@ -19,6 +19,23 @@
       ],
       "env": {
       }
+    },
+    {
+      "name": "Python: Falcon play (Mac)",
+      "type": "python",
+      "request": "launch",
+      "module": "scripts.chat_play",
+      "justMyCode": false,
+      "args": [
+        "--trust_remote_code",
+        "--system_prompt", "Reimu is the shrine maiden of the Hakurei Shrine, responsible for maintaining the Great Hakurei Barrier. Marisa is her friend.",
+        "--your_name", "Marisa",
+        "--bot_name", "Reimu",
+      ],
+      "env": {
+        // if you are on a recently PyTorch nightly, you actually don't need this. it'll just be a no-op so there's no harm keeping it.
+        "PYTORCH_ENABLE_MPS_FALLBACK": "1"
+      }
     }
   ]
 }

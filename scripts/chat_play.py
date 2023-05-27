@@ -15,9 +15,12 @@ from transformers import (
   PreTrainedTokenizerBase,
 )
 from src.callback_text_iterator_streamer import CallbackTextIteratorStreamer
+from src.mps_type_monkeypatch import monkeypatch_tensor_type_mps
 import logging
 from enum import Enum
 import sys
+
+monkeypatch_tensor_type_mps()
 
 logger = logging.getLogger(__name__)
 
@@ -169,12 +172,13 @@ def get_model(args: ModelArguments) -> AutoModelForCausalLM:
   if compute_dtype == torch.float16 and cuda_avail and torch.cuda.is_bf16_supported():
     print("Your GPU supports bfloat16; you may want to try it with --bf16 (note: I'm not sure how important this is for inference, but it's certainly preferred when training with 4-bit quantization.)")
 
+  device_map = {'': 'mps'} if torch.backends.mps.is_available() else 'auto'
   model = AutoModelForCausalLM.from_pretrained(
     args.model_name_or_path,
     config=config,
     load_in_4bit=load_in_4bit,
     load_in_8bit=load_in_8bit,
-    device_map='auto',
+    device_map=device_map,
     quantization_config=quantization_config,
     torch_dtype=compute_dtype,
     trust_remote_code=args.trust_remote_code,
