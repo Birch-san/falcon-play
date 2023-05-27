@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, TypedDict, NamedTuple, List
+from typing import Optional, TypedDict, NamedTuple, List, Dict
 import torch
 from torch import LongTensor
 from transformers import (
@@ -12,6 +12,7 @@ from transformers import (
   set_seed,
   StoppingCriteria,
   StoppingCriteriaList,
+  PreTrainedTokenizerBase,
 )
 from src.callback_text_iterator_streamer import CallbackTextIteratorStreamer
 import logging
@@ -28,6 +29,10 @@ class Participant(Enum):
   User = 'user'
   Assistant = 'assistant'
   System = 'system'
+
+class ParticipantNames(TypedDict):
+  user: str
+  assistant: str
 
 class Message(NamedTuple):
   participant: Participant
@@ -82,9 +87,22 @@ class MiscArguments:
     default=False,
     metadata={"help": "Invoke torch.compile() on the model, with mode='max-autotune'. Requires PyTorch 2, CUDA, and either Python 3.10 or Python 3.11 with a recent torch nightly. Will make the first inference from the model take a bit longer, but subsequent inferences will be faster."}
   )
-  use_system_prompt: bool = field(
+  compile: bool = field(
     default=False,
-    metadata={"help": "There is a system prompt used in MosaicML's MPT-7B-Chat demo, but in my brief testing it seemed that the model didn't listen to what I wrote in the system prompt… so I disable it by default, to save you some context length."}
+    metadata={"help": "Invoke torch.compile() on the model, with mode='max-autotune'. Requires PyTorch 2, CUDA, and either Python 3.10 or Python 3.11 with a recent torch nightly. Will make the first inference from the model take a bit longer, but subsequent inferences will be faster."}
+  )
+  your_name: str = field(
+    default='Marisa',
+    metadata={"help": "Your name in the chat log."}
+  )
+  bot_name: str = field(
+    default='Reimu',
+    metadata={"help": "Chatbot's name in the chat log."}
+  )
+  system_prompt: str = field(
+    # Touhou Wiki content, originally under CC-BY-SA 4.0, plus adaptations released under CC-BY-SA 4.0 https://en.touhouwiki.net/wiki/Reimu_Hakurei https://en.touhouwiki.net/wiki/Touhou_Wiki:Copyrights
+    default="Reimu is the shrine maiden of the Hakurei Shrine, responsible for maintaining the Great Hakurei Barrier. Her personality is typified by her desires, such as the desire to be wanted, to have good food, and to find happiness. Her biggest internal conflict comes from balancing her duties as the Hakurei shrine maiden and her own desires, though she does not seem to prefer acknowledging many of her internal conflicts. Her duty as the shrine maiden gives Reimu a sense of purpose and identity, however, it conflicts with her desires in that it distances her from others and has her dealing with incidents and other related problems on a frequent basis. Despite her duty making it seem as though she antagonizes youkai, in truth, she wishes for peace between humans and youkai. Reimu is generally a joyful and airheaded person. She's also incredibly prideful and quite arrogant due to it. She's often seen in a good mood until her routines are broken by some outside influence, be it a youkai or the like. She is quick to anger, but she's also quick to forget. Her full name is Hakurei Reimu.",
+    metadata={"help": "Influence how the chatbot responds, by seeding the conversation with some context."}
   )
 
 @dataclass
@@ -97,13 +115,13 @@ class GenerationArguments:
     metadata={"help": "Maximum number of new tokens to be generated in evaluation or prediction loops"
                       "if predict_with_generate is set."}
   )
-  min_new_tokens : Optional[int] = field(
+  min_new_tokens: Optional[int] = field(
     default=None,
     metadata={"help": "Minimum number of new tokens to generate."}
   )
 
   # Generation strategy
-  do_sample: Optional[bool] = field(default=False)
+  # do_sample: Optional[bool] = field(default=True)
   num_beams: Optional[int] = field(default=1)
   num_beam_groups: Optional[int] = field(default=1)
   penalty_alpha: Optional[float] = field(default=None)
@@ -111,7 +129,7 @@ class GenerationArguments:
 
   # Hyperparameters for logit manipulation
   temperature: Optional[float] = field(default=1.0)
-  top_k: Optional[int] = field(default=50)
+  top_k: Optional[int] = field(default=10)
   top_p: Optional[float] = field(default=1.0)
   typical_p: Optional[float] = field(default=1.0)
   diversity_penalty: Optional[float] = field(default=0.0)
@@ -145,15 +163,12 @@ def get_model(args: ModelArguments) -> AutoModelForCausalLM:
 
   if compute_dtype == torch.float16 and cuda_avail and torch.cuda.is_bf16_supported():
     print("Your GPU supports bfloat16; you may want to try it with --bf16 (note: I'm not sure how important this is for inference, but it's certainly preferred when training with 4-bit quantization.)")
-  
-  # device_map_ = { key: 'mps' for key in device_map } if torch.backends.mps.is_available() else device_map
 
   model = AutoModelForCausalLM.from_pretrained(
     args.model_name_or_path,
     config=config,
     load_in_4bit=load_in_4bit,
     load_in_8bit=load_in_8bit,
-    # device_map=device_map_,
     device_map='auto',
     quantization_config=quantization_config,
     torch_dtype=compute_dtype,
@@ -174,30 +189,30 @@ def main():
   if misc_args.compile:
     torch.compile(model, mode='max-autotune')
 
-  tokenizer: AutoTokenizer = AutoTokenizer.from_pretrained(
+  tokenizer: PreTrainedTokenizerBase = AutoTokenizer.from_pretrained(
     model_args.model_name_or_path,
-    cache_dir=None,
-    padding_side="right",
-    use_fast=True,
+    padding=False,
+    add_special_tokens=False,
   )
+  generation_config.eos_token_id = generation_config.pad_token_id = tokenizer.eos_token_id
 
-  stop_token_ids: List[int] = tokenizer.convert_tokens_to_ids(["<|im_end|>", "<|endoftext|>"])
-  stop = StopOnTokens(stop_token_ids)
+  stop = StopOnTokens([tokenizer.eos_token_id])
   stopping_criteria=StoppingCriteriaList([stop])
 
-  system_prompt = """- You are a helpful assistant chatbot trained by MosaicML.
-- You answer questions.
-- You are excited to be able to help the user, but will refuse to do anything that could be considered harmful to the user.
-- You are more than just an information source, you are also able to write poetry, short stories, and make jokes.
-"""
-
-  history: List[Message] = [Message(Participant.System, system_prompt)] if misc_args.use_system_prompt else []
+  history: List[Message] = [Message(Participant.System, misc_args.system_prompt)] if misc_args.system_prompt else []
 
   reset_ansi='\x1b[0m'
   blue_ansi='\x1b[31;34m'
   green_ansi='\x1b[31;32m'
   purple_ansi='\x1b[31;35m'
   prompt=f'{purple_ansi}$ '
+
+  participant_names: Dict[Participant, str] = {
+    Participant.User: misc_args.your_name,
+    Participant.Assistant: misc_args.bot_name,
+  }
+
+  tokenizer: PreTrainedTokenizerBase = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
 
   first = True
   while True:
@@ -210,14 +225,15 @@ def main():
     first = False
     history += [Message(Participant.User, user_input)]
   
-    history_str: str = ''.join([
-      f"<|im_start|>{participant.value}\n{message}<|im_end|>"
-      for participant, message in history
+    chat_to_complete: str = '\n'.join([
+      *[
+        f"{'' if participant is Participant.System else f'{participant_names[participant]}: '}{message}"
+        for participant, message in history
+      ],
+      f'{participant_names[Participant.Assistant]}:'
     ])
-    chat_to_complete = f"{history_str}<|im_start|>{Participant.Assistant.value}\n"
 
-    tokenized_prompts: TokenizerOutput = tokenizer([chat_to_complete], return_tensors='pt', truncation=True)
-    tokenized_prompts: TokenizerOutput = tokenized_prompts.to(model.device)
+    tokenized_prompts: TokenizerOutput = tokenizer(chat_to_complete, return_tensors='pt', padding=False, add_special_tokens=False)
     
     print(green_ansi, end='', flush=True)
 
@@ -231,14 +247,15 @@ def main():
 
     try:
       prediction: LongTensor = model.generate(
-        **tokenized_prompts,
+        input_ids=tokenized_prompts.input_ids.to(model.device),
+        attention_mask=tokenized_prompts.attention_mask.to(model.device),
         generation_config=generation_config,
         do_sample=generation_config.temperature > 0.,
         stopping_criteria=stopping_criteria,
         streamer=streamer,
       )
       # if you wanted to see the result, you can do so like this:
-      #   decode: List[str] = tokenizer.batch_decode(prediction, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+      #   decode: List[str] = tokenizer.decode(prediction[0,tokenized_prompts.input_ids.size(-1):], skip_special_tokens=True, clean_up_tokenization_spaces=True)
       # but we're already streaming it to the console via our callback
     except KeyboardInterrupt:
       pass
