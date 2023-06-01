@@ -10,7 +10,7 @@ Clone repository:
 
 ```bash
 git clone https://github.com/Birch-san/falcon-play.git
-cd mpt-play
+cd falcon-play
 ```
 
 ### Create + activate a new virtual environment
