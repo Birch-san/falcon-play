@@ -131,5 +131,3 @@ I mean it runs, but it's slow. Try [MPT-7B-Chat](https://github.com/Birch-san/mp
 This repository is itself MIT-licensed.
 
 Includes MIT-licensed code copied from Artidoro Pagnoni's [qlora](https://github.com/artidoro/qlora) and [Apache-licensed](licenses/MosaicML-mpt-7b-chat-hf-space.Apache.LICENSE.txt) code copied from MosaicML's [mpt-7b-chat](https://huggingface.co/spaces/mosaicml/mpt-7b-chat/blob/main/app.py) Huggingface Space.
-
-Please note that the TII Falcon models use a [modified Apache license](https://huggingface.co/tiiuae/falcon-7b-instruct/blob/main/LICENSE.txt), which stipulates that commercial use requires a royalty payment.
